@@ -4,7 +4,7 @@ Tags: jupiter, pagination, seo, disable ajax, artbees
 Requires at least: 5.0
 Tested up to: 6.8
 Requires PHP: 5.6
-Stable tag: 1.4.1
+Stable tag: 1.4.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -116,9 +116,14 @@ Tested with:
 
 == Changelog ==
 
+= 1.4.2 =
+* Added: GitHub auto-updater for automatic plugin updates
+* Added: Comprehensive documentation (README.md, RELEASE.md)
+* Improved: Better integration with SEO plugins for rel=prev/next placement
+
 = 1.4.1 =
 * Cleanup: Removed debug comments from output
-* Improved: rel=prev/next links output at priority 1 to group with canonical tags
+* Improved: rel=prev/next links output at priority 35 to group with canonical tags
 
 = 1.4.0 =
 * NEW: Added rel=prev/next links to `<head>` for improved SEO

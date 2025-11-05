@@ -140,6 +140,11 @@ Tested with:
 
 ## Changelog
 
+### 1.4.2
+- Added: GitHub auto-updater for automatic plugin updates
+- Added: Comprehensive documentation (README.md, RELEASE.md)
+- Improved: Better integration with SEO plugins for rel=prev/next placement
+
 ### 1.4.1
 - Cleanup: Removed debug comments from output
 - Improved: rel=prev/next links output at priority 35 to group with canonical tags

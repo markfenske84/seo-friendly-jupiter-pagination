@@ -3,7 +3,7 @@
  * Plugin Name: SEO Friendly Jupiter Pagination
  * Plugin URI: https://webfor.com
  * Description: Converts Jupiter theme's AJAX pagination to SEO-friendly standard pagination with proper URLs. Disables AJAX functionality and makes pagination work as normal links. Includes sliding window to show only 8 pages. Adds rel=prev/next links to head for SEO.
- * Version: 1.4.1
+ * Version: 1.4.2
  * Author: Webfor Agency
  * Author URI: https://webfor.com
  * License: GPL v2 or later
