@@ -16,6 +16,23 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Load Plugin Update Checker library
+require_once plugin_dir_path(__FILE__) . 'plugin-update-checker/plugin-update-checker.php';
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
+// Initialize GitHub updater
+$myUpdateChecker = PucFactory::buildUpdateChecker(
+    'https://github.com/markfenske84/seo-friendly-jupiter-pagination/',
+    __FILE__,
+    'seo-friendly-jupiter-pagination'
+);
+
+// Optional: Set the branch that contains the stable release
+$myUpdateChecker->setBranch('main');
+
+// Optional: If your repository is private, specify an access token
+// $myUpdateChecker->setAuthentication('your-token-here');
+
 class SEO_Friendly_Jupiter_Pagination {
     
     /**
