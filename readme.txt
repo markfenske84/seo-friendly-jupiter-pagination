@@ -4,7 +4,7 @@ Tags: jupiter, pagination, seo, disable ajax, artbees
 Requires at least: 5.0
 Tested up to: 6.8
 Requires PHP: 5.6
-Stable tag: 1.4.2
+Stable tag: 1.4.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -115,6 +115,11 @@ Tested with:
 * PHP 5.6 - 8.2
 
 == Changelog ==
+
+= 1.4.3 =
+* Fixed: Current page styling now works correctly on sites with fewer than 8 pages
+* Fixed: Plugin now properly corrects Jupiter's current-page class when it's on the wrong element
+* Improved: Added fix_current_page_element() function to handle current page detection for non-sliding-window pagination
 
 = 1.4.2 =
 * Added: GitHub auto-updater for automatic plugin updates

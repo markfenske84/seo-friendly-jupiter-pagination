@@ -140,6 +140,11 @@ Tested with:
 
 ## Changelog
 
+### 1.4.3
+- Fixed: Current page styling now works correctly on sites with fewer than 8 pages
+- Fixed: Plugin now properly corrects Jupiter's current-page class when it's on the wrong element
+- Improved: Added fix_current_page_element() function to handle current page detection for non-sliding-window pagination
+
 ### 1.4.2
 - Added: GitHub auto-updater for automatic plugin updates
 - Added: Comprehensive documentation (README.md, RELEASE.md)

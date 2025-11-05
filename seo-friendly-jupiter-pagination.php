@@ -3,7 +3,7 @@
  * Plugin Name: SEO Friendly Jupiter Pagination
  * Plugin URI: https://webfor.com
  * Description: Converts Jupiter theme's AJAX pagination to SEO-friendly standard pagination with proper URLs. Disables AJAX functionality and makes pagination work as normal links. Includes sliding window to show only 8 pages. Adds rel=prev/next links to head for SEO.
- * Version: 1.4.2
+ * Version: 1.4.3
  * Author: Webfor Agency
  * Author URI: https://webfor.com
  * License: GPL v2 or later
@@ -310,6 +310,21 @@ class SEO_Friendly_Jupiter_Pagination {
             
             // Also re-query for current page spans after sliding window (only in pagination-inner)
             $current_page_spans = $xpath->query('//*[contains(@class, "mk-pagination-inner")]//*[contains(@class, "current-page")]');
+        } else {
+            // No sliding window needed, but we still need to fix the current page element
+            // Jupiter sometimes marks the wrong page as current, so we need to fix it
+            $content = $this->fix_current_page_element($content, $current_page, $loadhtml_options);
+            
+            // Re-parse after fixing current page
+            libxml_use_internal_errors(true);
+            $dom = new DOMDocument();
+            $dom->loadHTML('<?xml encoding="UTF-8">' . $content, $loadhtml_options);
+            libxml_clear_errors();
+            $xpath = new DOMXPath($dom);
+            $links = $xpath->query('//a[@data-page-id]');
+            
+            // Also re-query for current page spans after fixing
+            $current_page_spans = $xpath->query('//*[contains(@class, "mk-pagination-inner")]//*[contains(@class, "current-page")]');
         }
         
         // Handle current page elements (spans) - ensure they keep proper styling
@@ -612,6 +627,62 @@ class SEO_Friendly_Jupiter_Pagination {
         // Add back only the elements we want in the correct order
         foreach ($links_array as $element) {
             $pagination_container->appendChild($element->cloneNode(true));
+        }
+        
+        // Get the modified HTML
+        $modified_content = $dom->saveHTML();
+        
+        // Remove XML encoding declaration
+        $modified_content = str_replace('<?xml encoding="UTF-8">', '', $modified_content);
+        
+        return $modified_content;
+    }
+    
+    /**
+     * Fix current page element when not using sliding window
+     * Jupiter sometimes marks the wrong page as current, so we need to correct it
+     */
+    private function fix_current_page_element($content, $current_page, $loadhtml_options) {
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $content, $loadhtml_options);
+        libxml_clear_errors();
+        
+        $xpath = new DOMXPath($dom);
+        $pagination_container = $xpath->query('//*[contains(@class, "mk-pagination-inner")]')->item(0);
+        
+        if (!$pagination_container) {
+            return $content;
+        }
+        
+        // Remove current-page class from ALL elements in pagination-inner
+        $all_with_current = $xpath->query('.//*[contains(@class, "current-page")]', $pagination_container);
+        foreach ($all_with_current as $element) {
+            $classes = $element->getAttribute('class');
+            $classes = str_replace('current-page', '', $classes);
+            $classes = trim(preg_replace('/\s+/', ' ', $classes));
+            $element->setAttribute('class', $classes);
+        }
+        
+        // Find the element that should be current (link with matching data-page-id)
+        $current_link = null;
+        $all_links = $xpath->query('.//a[@data-page-id]', $pagination_container);
+        foreach ($all_links as $link) {
+            $page_id = intval($link->getAttribute('data-page-id'));
+            if ($page_id === intval($current_page)) {
+                $current_link = $link;
+                break;
+            }
+        }
+        
+        if ($current_link) {
+            // Convert the link to a span with current-page class
+            $span = $dom->createElement('span');
+            $span->nodeValue = trim($current_link->textContent);
+            $span->setAttribute('class', 'page-number current-page');
+            
+            // Replace the link with the span
+            $current_link->parentNode->replaceChild($span, $current_link);
         }
         
         // Get the modified HTML
