@@ -4,7 +4,7 @@ Tags: jupiter, pagination, seo, disable ajax, artbees
 Requires at least: 5.0
 Tested up to: 6.8
 Requires PHP: 5.6
-Stable tag: 1.4.3
+Stable tag: 1.4.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -116,6 +116,12 @@ Tested with:
 
 == Changelog ==
 
+= 1.4.6 =
+* Improved: Enhanced JavaScript to properly destroy Jupiter's Pagination component
+* Improved: Better prevention of MK.component re-initialization
+* Fixed: More comprehensive removal of pagination event handlers
+* Fixed: Added destruction of Jupiter component instances for better compatibility across sites
+
 = 1.4.3 =
 * Fixed: Current page styling now works correctly on sites with fewer than 8 pages
 * Fixed: Plugin now properly corrects Jupiter's current-page class when it's on the wrong element
@@ -201,6 +207,9 @@ Tested with:
 * Automatic detection and activation
 
 == Upgrade Notice ==
+
+= 1.4.6 =
+Improved compatibility: Better handling of Jupiter Pagination component destruction for consistent behavior across different sites.
 
 = 1.3.0 =
 Critical update: Fixes current page styling on all pages, makes ellipsis clickable, and enables prev/next arrows. Highly recommended.

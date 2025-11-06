@@ -140,6 +140,12 @@ Tested with:
 
 ## Changelog
 
+### 1.4.6
+- Improved: Enhanced JavaScript to properly destroy Jupiter's Pagination component
+- Improved: Better prevention of MK.component re-initialization
+- Fixed: More comprehensive removal of pagination event handlers
+- Fixed: Added destruction of Jupiter component instances for better compatibility across sites
+
 ### 1.4.3
 - Fixed: Current page styling now works correctly on sites with fewer than 8 pages
 - Fixed: Plugin now properly corrects Jupiter's current-page class when it's on the wrong element
