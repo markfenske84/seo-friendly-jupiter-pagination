@@ -2,8 +2,8 @@
 /**
  * Plugin Name: SEO Friendly Jupiter Pagination
  * Plugin URI: https://webfor.com
- * Description: Converts Jupiter theme's AJAX pagination to SEO-friendly standard pagination with proper URLs. Disables AJAX functionality and makes pagination work as normal links. Includes sliding window to show only 8 pages. Adds rel=prev/next links to head for SEO.
- * Version: 1.4.6
+ * Description: Converts Jupiter theme's AJAX pagination to SEO-friendly standard pagination with proper URLs. Disables AJAX functionality and makes pagination work as normal links. Includes sliding window to show only 8 pages. Adds rel=prev/next links to head for SEO. Supports custom post type archives.
+ * Version: 1.6.0
  * Author: Webfor Agency
  * Author URI: https://webfor.com
  * License: GPL v2 or later
@@ -41,15 +41,22 @@ class SEO_Friendly_Jupiter_Pagination {
     private $pages_to_show = 8;
     
     /**
+     * Flag to track if we started the full page buffer
+     */
+    private $buffer_started = false;
+    
+    /**
      * Constructor
      */
     public function __construct() {
         // Hook into the_content with high priority to catch pagination
         add_filter('the_content', array($this, 'fix_jupiter_pagination'), 999);
         
-        // Also hook into loop_end to catch pagination that appears after content
-        add_action('loop_end', array($this, 'start_output_buffer'));
-        add_action('wp_footer', array($this, 'fix_pagination_buffer'), 1);
+        // Start full page output buffer early to catch ALL pagination (including CPT archives)
+        add_action('template_redirect', array($this, 'start_full_page_buffer'), 1);
+        
+        // Process the full page buffer at shutdown
+        add_action('shutdown', array($this, 'process_full_page_buffer'), 0);
         
         // Enqueue JavaScript to disable Jupiter AJAX pagination
         add_action('wp_enqueue_scripts', array($this, 'enqueue_disable_ajax_script'));
@@ -132,9 +139,25 @@ class SEO_Friendly_Jupiter_Pagination {
         }
         $current_page = max(1, intval($paged));
         
-        // Get total pages from the main query (works for native WP blog)
+        // Get total pages from the main query (works for native WP blog and CPT archives)
         global $wp_query;
         $total_pages = isset($wp_query->max_num_pages) ? intval($wp_query->max_num_pages) : 0;
+        
+        // For custom post type archives, ensure we're getting the right query
+        if (is_post_type_archive() && $total_pages <= 1) {
+            // Double check by querying the post type
+            $post_type = get_query_var('post_type');
+            if (is_array($post_type)) {
+                $post_type = reset($post_type);
+            }
+            if ($post_type) {
+                $count_posts = wp_count_posts($post_type);
+                if ($count_posts && isset($count_posts->publish)) {
+                    $posts_per_page = get_option('posts_per_page');
+                    $total_pages = max($total_pages, ceil($count_posts->publish / $posts_per_page));
+                }
+            }
+        }
         
         // Try to get cached total pages from Jupiter pagination (set during HTML processing)
         // This is needed for page builder modules where $wp_query doesn't have pagination info
@@ -188,21 +211,44 @@ class SEO_Friendly_Jupiter_Pagination {
     }
     
     /**
-     * Start output buffering to catch pagination
+     * Start full page output buffer to catch all pagination
      */
-    public function start_output_buffer($query) {
-        if ($query->is_main_query() && !is_admin()) {
-            ob_start(array($this, 'fix_jupiter_pagination'));
+    public function start_full_page_buffer() {
+        // Only buffer on frontend, not admin
+        if (is_admin()) {
+            return;
         }
+        
+        // Don't buffer AJAX, REST API, or feed requests
+        if (wp_doing_ajax() || (defined('REST_REQUEST') && REST_REQUEST) || is_feed()) {
+            return;
+        }
+        
+        $this->buffer_started = true;
+        ob_start();
     }
     
     /**
-     * Process the output buffer
+     * Process the full page output buffer at shutdown
      */
-    public function fix_pagination_buffer() {
-        if (ob_get_level() > 0) {
-            ob_end_flush();
+    public function process_full_page_buffer() {
+        if (!$this->buffer_started) {
+            return;
         }
+        
+        // Get all buffered content
+        $content = '';
+        while (ob_get_level() > 0) {
+            $content = ob_get_clean() . $content;
+        }
+        
+        // Process pagination in the full page output
+        if (!empty($content)) {
+            $content = $this->fix_jupiter_pagination($content);
+        }
+        
+        // Output the processed content
+        echo $content;
     }
     
     /**
@@ -212,6 +258,12 @@ class SEO_Friendly_Jupiter_Pagination {
         // Check if this is Jupiter pagination
         if (strpos($content, 'mk-pagination-inner') === false && 
             strpos($content, 'js-pagination-page') === false) {
+            return $content;
+        }
+        
+        // Skip pagination that's already been processed (has proper URLs, not href="#")
+        // This prevents double-processing of pagination output by themes using usarc_jupiter_pagination()
+        if (strpos($content, 'data-seo-processed="true"') !== false) {
             return $content;
         }
         
@@ -786,8 +838,99 @@ class SEO_Friendly_Jupiter_Pagination {
     private function get_pagination_base_url() {
         global $wp;
         
-        // Get current URL without pagination
+        // Handle custom post type archives
+        if (is_post_type_archive()) {
+            $post_type = get_query_var('post_type');
+            if (is_array($post_type)) {
+                $post_type = reset($post_type);
+            }
+            if ($post_type) {
+                $base_url = get_post_type_archive_link($post_type);
+                if ($base_url) {
+                    // Remove any existing /page/X/ from URL
+                    $base_url = preg_replace('/\/page\/\d+\/?/', '', $base_url);
+                    return untrailingslashit($base_url);
+                }
+            }
+        }
+        
+        // Handle taxonomy archives (categories, tags, custom taxonomies)
+        if (is_tax() || is_category() || is_tag()) {
+            $term = get_queried_object();
+            if ($term && isset($term->term_id)) {
+                $base_url = get_term_link($term);
+                if ($base_url && !is_wp_error($base_url)) {
+                    // Remove any existing /page/X/ from URL
+                    $base_url = preg_replace('/\/page\/\d+\/?/', '', $base_url);
+                    return untrailingslashit($base_url);
+                }
+            }
+        }
+        
+        // Handle author archives
+        if (is_author()) {
+            $author = get_queried_object();
+            if ($author && isset($author->ID)) {
+                $base_url = get_author_posts_url($author->ID);
+                if ($base_url) {
+                    $base_url = preg_replace('/\/page\/\d+\/?/', '', $base_url);
+                    return untrailingslashit($base_url);
+                }
+            }
+        }
+        
+        // Handle date archives
+        if (is_date()) {
+            if (is_year()) {
+                $base_url = get_year_link(get_query_var('year'));
+            } elseif (is_month()) {
+                $base_url = get_month_link(get_query_var('year'), get_query_var('monthnum'));
+            } elseif (is_day()) {
+                $base_url = get_day_link(get_query_var('year'), get_query_var('monthnum'), get_query_var('day'));
+            }
+            if (!empty($base_url)) {
+                $base_url = preg_replace('/\/page\/\d+\/?/', '', $base_url);
+                return untrailingslashit($base_url);
+            }
+        }
+        
+        // Handle search results
+        if (is_search()) {
+            $base_url = get_search_link(get_search_query(false));
+            if ($base_url) {
+                $base_url = preg_replace('/\/page\/\d+\/?/', '', $base_url);
+                return untrailingslashit($base_url);
+            }
+        }
+        
+        // Handle home/blog page
+        if (is_home()) {
+            $base_url = get_permalink(get_option('page_for_posts'));
+            if (!$base_url) {
+                $base_url = home_url('/');
+            }
+            $base_url = preg_replace('/\/page\/\d+\/?/', '', $base_url);
+            return untrailingslashit($base_url);
+        }
+        
+        // Handle single posts/pages (for paginated content)
+        if (is_singular()) {
+            $base_url = get_permalink();
+            if ($base_url) {
+                $base_url = preg_replace('/\/page\/\d+\/?/', '', $base_url);
+                return untrailingslashit($base_url);
+            }
+        }
+        
+        // Fallback: use current URL from $wp->request
         $current_url = home_url($wp->request);
+        
+        // If $wp->request is empty, try to get URL from server
+        if (empty($wp->request)) {
+            $current_url = home_url(add_query_arg(array(), $_SERVER['REQUEST_URI'] ?? ''));
+            // Remove query strings
+            $current_url = strtok($current_url, '?');
+        }
         
         // Remove any existing /page/X/ from URL
         $base_url = preg_replace('/\/page\/\d+\/?/', '', $current_url);
