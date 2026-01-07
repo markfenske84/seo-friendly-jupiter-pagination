@@ -3,7 +3,7 @@
  * Plugin Name: SEO Friendly Jupiter Pagination
  * Plugin URI: https://webfor.com
  * Description: Converts Jupiter theme's AJAX pagination to SEO-friendly standard pagination with proper URLs. Disables AJAX functionality and makes pagination work as normal links. Includes sliding window to show only 8 pages. Adds rel=prev/next links to head for SEO. Supports custom post type archives.
- * Version: 1.6.0
+ * Version: 1.6.1
  * Author: Webfor Agency
  * Author URI: https://webfor.com
  * License: GPL v2 or later
@@ -49,10 +49,8 @@ class SEO_Friendly_Jupiter_Pagination {
      * Constructor
      */
     public function __construct() {
-        // Hook into the_content with high priority to catch pagination
-        add_filter('the_content', array($this, 'fix_jupiter_pagination'), 999);
-        
         // Start full page output buffer early to catch ALL pagination (including CPT archives)
+        // This replaces the old the_content filter approach which could cause double-processing
         add_action('template_redirect', array($this, 'start_full_page_buffer'), 1);
         
         // Process the full page buffer at shutdown
@@ -72,20 +70,6 @@ class SEO_Friendly_Jupiter_Pagination {
         // Add inline script to disable Jupiter AJAX pagination
         wp_add_inline_script('jquery', "
             jQuery(document).ready(function($) {
-                // Destroy Jupiter's Pagination component if it exists
-                if (typeof MK !== 'undefined' && typeof MK.component !== 'undefined' && typeof MK.component.Pagination !== 'undefined') {
-                    $('.mk-pagination[data-mk-component=\"Pagination\"]').each(function() {
-                        // Try to destroy the component instance
-                        var component = $(this).data('Pagination');
-                        if (component && typeof component.destroy === 'function') {
-                            component.destroy();
-                        }
-                        // Remove the data attribute
-                        $(this).removeAttr('data-mk-component');
-                        $(this).removeClass('js-el');
-                    });
-                }
-                
                 // Remove Jupiter's AJAX pagination event handlers
                 $(document).off('click', '.js-pagination-page');
                 $(document).off('click', '.mk-pagination-inner a');
@@ -93,7 +77,6 @@ class SEO_Friendly_Jupiter_Pagination {
                 $(document).off('click', '.js-pagination-next');
                 
                 // Prevent any delegated events on pagination
-                $('.mk-pagination').off('click');
                 $('.mk-pagination-inner').off('click');
                 $('.mk-pagination-previous').off('click');
                 $('.mk-pagination-next').off('click');
@@ -115,15 +98,6 @@ class SEO_Friendly_Jupiter_Pagination {
                         return false;
                     }
                 });
-                
-                // Prevent MK.component from re-initializing Pagination on this page
-                if (typeof MK !== 'undefined' && typeof MK.component !== 'undefined') {
-                    var originalPagination = MK.component.Pagination;
-                    MK.component.Pagination = function() {
-                        // Do nothing - prevent initialization
-                        return { init: function() {}, destroy: function() {} };
-                    };
-                }
             });
         ");
     }
@@ -289,54 +263,19 @@ class SEO_Friendly_Jupiter_Pagination {
         // Find all pagination links and current page elements
         $xpath = new DOMXPath($dom);
         
-        // Get pagination container first (needed for multiple operations)
-        $pagination_containers = $xpath->query('//*[contains(@class, "mk-pagination")]');
-        
-        // Detect current page - prioritize WordPress query vars over HTML attributes
+        // Detect current page from Jupiter's data attributes or page number display
         $current_page = 0;
         
-        // Method 1 (HIGHEST PRIORITY): WordPress query var - most reliable
-        $paged_var = get_query_var('paged');
-        if (!$paged_var) {
-            $paged_var = get_query_var('page'); // For static front page
-        }
-        
-        // Convert to integer - WordPress returns 0 or '' for page 1, which means we ARE on a paginated page, just page 1
-        $paged_var = intval($paged_var);
-        
-        // Check if we're on a page that has pagination (blog, archive, etc.)
-        // If pagination exists in the HTML and paged_var is 0, we're on page 1
+        // Method 1: Check data-init-pagination attribute on pagination container
+        $pagination_containers = $xpath->query('//*[contains(@class, "mk-pagination") and @data-init-pagination]');
         if ($pagination_containers->length > 0) {
-            // We have pagination HTML, so we know this is a paginated page
-            if ($paged_var > 0) {
-                // Page 2+
-                $current_page = $paged_var;
-            } else {
-                // paged_var is 0, which means page 1 for paginated content
-                $current_page = 1;
-            }
-        } elseif ($paged_var > 0) {
-            // No pagination HTML yet, but paged var is set
-            $current_page = $paged_var;
-        }
-        
-        // Method 2: Check data-number-pages attribute on pagination container (Jupiter's current page indicator)
-        if ($current_page === 0 && $pagination_containers->length > 0) {
-            $number_pages = $pagination_containers->item(0)->getAttribute('data-number-pages');
-            if ($number_pages && $number_pages !== '' && $number_pages !== '0') {
-                $current_page = intval($number_pages);
-            }
-        }
-        
-        // Method 3: Check data-init-pagination attribute on pagination container (older Jupiter versions)
-        if ($current_page === 0 && $pagination_containers->length > 0) {
             $init_page = $pagination_containers->item(0)->getAttribute('data-init-pagination');
             if ($init_page && $init_page !== '' && $init_page !== '0') {
                 $current_page = intval($init_page);
             }
         }
         
-        // Method 4: Check the pagination-current-page span (in mk-total-pages) - LEAST RELIABLE
+        // Method 2: Check the pagination-current-page span (in mk-total-pages)
         if ($current_page === 0) {
             $current_page_display = $xpath->query('//*[contains(@class, "mk-total-pages")]//*[contains(@class, "pagination-current-page") or contains(@class, "js-current-page")]');
             if ($current_page_display->length > 0) {
@@ -347,7 +286,16 @@ class SEO_Friendly_Jupiter_Pagination {
             }
         }
         
-        // Ensure we have a valid page number (default to 1)
+        // Method 3: Fallback to WordPress query var
+        if ($current_page === 0) {
+            $paged_var = get_query_var('paged');
+            if (!$paged_var) {
+                $paged_var = get_query_var('page'); // For static front page
+            }
+            $current_page = max(1, intval($paged_var));
+        }
+        
+        // Ensure we have a valid page number
         if ($current_page === 0) {
             $current_page = 1;
         }
@@ -369,15 +317,6 @@ class SEO_Friendly_Jupiter_Pagination {
         $max_pages_attr = $pagination_containers->length > 0 ? $pagination_containers->item(0)->getAttribute('data-max-pages') : '';
         if ($max_pages_attr) {
             $total_pages = intval($max_pages_attr);
-        }
-        
-        // Update pagination container attributes to reflect actual current page
-        // This prevents Jupiter's JavaScript from interfering with navigation
-        if ($pagination_containers->length > 0) {
-            $pagination_containers->item(0)->setAttribute('data-number-pages', strval($current_page));
-            if ($pagination_containers->item(0)->hasAttribute('data-init-pagination')) {
-                $pagination_containers->item(0)->setAttribute('data-init-pagination', strval($current_page));
-            }
         }
         
         // Fallback: Get from the highest data-page-id
@@ -421,21 +360,6 @@ class SEO_Friendly_Jupiter_Pagination {
             
             // Also re-query for current page spans after sliding window (only in pagination-inner)
             $current_page_spans = $xpath->query('//*[contains(@class, "mk-pagination-inner")]//*[contains(@class, "current-page")]');
-        } else {
-            // No sliding window needed, but we still need to fix the current page element
-            // Jupiter sometimes marks the wrong page as current, so we need to fix it
-            $content = $this->fix_current_page_element($content, $current_page, $loadhtml_options);
-            
-            // Re-parse after fixing current page
-            libxml_use_internal_errors(true);
-            $dom = new DOMDocument();
-            $dom->loadHTML('<?xml encoding="UTF-8">' . $content, $loadhtml_options);
-            libxml_clear_errors();
-            $xpath = new DOMXPath($dom);
-            $links = $xpath->query('//a[@data-page-id]');
-            
-            // Also re-query for current page spans after fixing
-            $current_page_spans = $xpath->query('//*[contains(@class, "mk-pagination-inner")]//*[contains(@class, "current-page")]');
         }
         
         // Handle current page elements (spans) - ensure they keep proper styling
@@ -469,21 +393,11 @@ class SEO_Friendly_Jupiter_Pagination {
                 $prev_page = $current_page - 1;
                 $prev_url = ($prev_page === 1) ? $base_url : trailingslashit($base_url) . 'page/' . $prev_page . '/';
                 $prev_arrow->setAttribute('href', esc_url($prev_url));
-                
-                // Remove hidden class if present
-                $classes = $prev_arrow->getAttribute('class');
-                $classes = str_replace('is-vis-hidden', '', $classes);
-                $classes = str_replace('js-pagination-prev', '', $classes);
-                $prev_arrow->setAttribute('class', trim(preg_replace('/\s+/', ' ', $classes)));
-            } else {
-                // On first page, keep/add the hidden class
-                $classes = $prev_arrow->getAttribute('class');
-                if (strpos($classes, 'is-vis-hidden') === false) {
-                    $classes .= ' is-vis-hidden';
-                }
-                $classes = str_replace('js-pagination-prev', '', $classes);
-                $prev_arrow->setAttribute('class', trim(preg_replace('/\s+/', ' ', $classes)));
             }
+            // Remove AJAX class
+            $classes = $prev_arrow->getAttribute('class');
+            $classes = str_replace('js-pagination-prev', '', $classes);
+            $prev_arrow->setAttribute('class', trim($classes));
         }
         
         $next_arrows = $xpath->query('//*[contains(@class, "js-pagination-next") or contains(@class, "mk-pagination-next")]');
@@ -492,21 +406,11 @@ class SEO_Friendly_Jupiter_Pagination {
                 $next_page = $current_page + 1;
                 $next_url = trailingslashit($base_url) . 'page/' . $next_page . '/';
                 $next_arrow->setAttribute('href', esc_url($next_url));
-                
-                // Remove hidden class if present
-                $classes = $next_arrow->getAttribute('class');
-                $classes = str_replace('is-vis-hidden', '', $classes);
-                $classes = str_replace('js-pagination-next', '', $classes);
-                $next_arrow->setAttribute('class', trim(preg_replace('/\s+/', ' ', $classes)));
-            } else {
-                // On last page, hide the next arrow
-                $classes = $next_arrow->getAttribute('class');
-                if (strpos($classes, 'is-vis-hidden') === false) {
-                    $classes .= ' is-vis-hidden';
-                }
-                $classes = str_replace('js-pagination-next', '', $classes);
-                $next_arrow->setAttribute('class', trim(preg_replace('/\s+/', ' ', $classes)));
             }
+            // Remove AJAX class
+            $classes = $next_arrow->getAttribute('class');
+            $classes = str_replace('js-pagination-next', '', $classes);
+            $next_arrow->setAttribute('class', trim($classes));
         }
         
         // Update all pagination links with proper URLs and disable AJAX
@@ -555,13 +459,6 @@ class SEO_Friendly_Jupiter_Pagination {
                 $ellipsis->removeAttribute('data-ellipsis-page');
                 $ellipsis->removeAttribute('data-page-id');
             }
-        }
-        
-        // Update the current page display in mk-total-pages (the "page X of Y" display)
-        $total_pages_display = $xpath->query('//*[contains(@class, "mk-total-pages")]//*[contains(@class, "pagination-current-page") or contains(@class, "js-current-page")]');
-        if ($total_pages_display->length > 0) {
-            // Update the text content to show the correct current page
-            $total_pages_display->item(0)->nodeValue = strval($current_page);
         }
         
         // Get the modified HTML
@@ -765,62 +662,6 @@ class SEO_Friendly_Jupiter_Pagination {
         // Add back only the elements we want in the correct order
         foreach ($links_array as $element) {
             $pagination_container->appendChild($element->cloneNode(true));
-        }
-        
-        // Get the modified HTML
-        $modified_content = $dom->saveHTML();
-        
-        // Remove XML encoding declaration
-        $modified_content = str_replace('<?xml encoding="UTF-8">', '', $modified_content);
-        
-        return $modified_content;
-    }
-    
-    /**
-     * Fix current page element when not using sliding window
-     * Jupiter sometimes marks the wrong page as current, so we need to correct it
-     */
-    private function fix_current_page_element($content, $current_page, $loadhtml_options) {
-        libxml_use_internal_errors(true);
-        $dom = new DOMDocument();
-        $dom->loadHTML('<?xml encoding="UTF-8">' . $content, $loadhtml_options);
-        libxml_clear_errors();
-        
-        $xpath = new DOMXPath($dom);
-        $pagination_container = $xpath->query('//*[contains(@class, "mk-pagination-inner")]')->item(0);
-        
-        if (!$pagination_container) {
-            return $content;
-        }
-        
-        // Remove current-page class from ALL elements in pagination-inner
-        $all_with_current = $xpath->query('.//*[contains(@class, "current-page")]', $pagination_container);
-        foreach ($all_with_current as $element) {
-            $classes = $element->getAttribute('class');
-            $classes = str_replace('current-page', '', $classes);
-            $classes = trim(preg_replace('/\s+/', ' ', $classes));
-            $element->setAttribute('class', $classes);
-        }
-        
-        // Find the element that should be current (link with matching data-page-id)
-        $current_link = null;
-        $all_links = $xpath->query('.//a[@data-page-id]', $pagination_container);
-        foreach ($all_links as $link) {
-            $page_id = intval($link->getAttribute('data-page-id'));
-            if ($page_id === intval($current_page)) {
-                $current_link = $link;
-                break;
-            }
-        }
-        
-        if ($current_link) {
-            // Convert the link to a span with current-page class
-            $span = $dom->createElement('span');
-            $span->nodeValue = trim($current_link->textContent);
-            $span->setAttribute('class', 'page-number current-page');
-            
-            // Replace the link with the span
-            $current_link->parentNode->replaceChild($span, $current_link);
         }
         
         // Get the modified HTML
