@@ -3,7 +3,7 @@
  * Plugin Name: SEO Friendly Jupiter Pagination
  * Plugin URI: https://webfor.com
  * Description: Converts Jupiter theme's AJAX pagination to SEO-friendly standard pagination with proper URLs. Disables AJAX functionality and makes pagination work as normal links. Includes sliding window to show only 8 pages. Adds rel=prev/next links to head for SEO. Supports custom post type archives.
- * Version: 1.6.2
+ * Version: 1.6.5
  * Author: Webfor Agency
  * Author URI: https://webfor.com
  * License: GPL v2 or later
@@ -235,8 +235,8 @@ class SEO_Friendly_Jupiter_Pagination {
             return $content;
         }
         
-        // Skip pagination that's already been processed (has proper URLs, not href="#")
-        // This prevents double-processing of pagination output by themes using usarc_jupiter_pagination()
+        // Skip if pagination was already processed by theme's usarc_jupiter_pagination()
+        // This prevents double-processing on pages that use the theme's custom pagination
         if (strpos($content, 'data-seo-processed="true"') !== false) {
             return $content;
         }
@@ -310,6 +310,7 @@ class SEO_Friendly_Jupiter_Pagination {
         // Ensure current_page is always an integer
         $current_page = intval($current_page);
         
+        // Query for all links with data-page-id
         $links = $xpath->query('//a[@data-page-id]');
         
         // Also find current page span elements ONLY within pagination-inner (not mk-total-pages)
@@ -366,6 +367,34 @@ class SEO_Friendly_Jupiter_Pagination {
             $links = $xpath->query('//a[@data-page-id]');
             
             // Also re-query for current page spans after sliding window (only in pagination-inner)
+            $current_page_spans = $xpath->query('//*[contains(@class, "mk-pagination-inner")]//*[contains(@class, "current-page")]');
+        } else {
+            // No sliding window - but we still need to fix the current page indicator
+            // Jupiter always marks page 1 as current, we need to fix this
+            
+            // First, remove current-page class from any wrongly-marked elements
+            $wrong_current = $xpath->query('//*[contains(@class, "mk-pagination-inner")]//*[contains(@class, "current-page")]');
+            foreach ($wrong_current as $wrong) {
+                $classes = $wrong->getAttribute('class');
+                $classes = str_replace('current-page', '', $classes);
+                $classes = trim(preg_replace('/\s+/', ' ', $classes));
+                $wrong->setAttribute('class', $classes);
+            }
+            
+            // Find the link for the actual current page and convert it to a span
+            $current_link = $xpath->query('//a[@data-page-id="' . $current_page . '"]')->item(0);
+            if ($current_link && $current_link->parentNode) {
+                // Create span to replace the link
+                $span = $dom->createElement('span');
+                $span->nodeValue = strval($current_page);
+                $span->setAttribute('class', 'page-number current-page');
+                
+                // Replace link with span
+                $current_link->parentNode->replaceChild($span, $current_link);
+            }
+            
+            // Re-query for updated elements
+            $links = $xpath->query('//a[@data-page-id]');
             $current_page_spans = $xpath->query('//*[contains(@class, "mk-pagination-inner")]//*[contains(@class, "current-page")]');
         }
         
@@ -792,4 +821,3 @@ class SEO_Friendly_Jupiter_Pagination {
 
 // Initialize the plugin
 new SEO_Friendly_Jupiter_Pagination();
-
