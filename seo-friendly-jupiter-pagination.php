@@ -3,7 +3,7 @@
  * Plugin Name: SEO Friendly Jupiter Pagination
  * Plugin URI: https://webfor.com
  * Description: Converts Jupiter theme's AJAX pagination to SEO-friendly standard pagination with proper URLs. Disables AJAX functionality and makes pagination work as normal links. Includes sliding window to show only 8 pages. Adds rel=prev/next links to head for SEO. Supports custom post type archives.
- * Version: 1.6.1
+ * Version: 1.6.2
  * Author: Webfor Agency
  * Author URI: https://webfor.com
  * License: GPL v2 or later
@@ -263,19 +263,35 @@ class SEO_Friendly_Jupiter_Pagination {
         // Find all pagination links and current page elements
         $xpath = new DOMXPath($dom);
         
-        // Detect current page from Jupiter's data attributes or page number display
+        // Detect current page - URL parsing is most reliable for CPT archives
         $current_page = 0;
         
-        // Method 1: Check data-init-pagination attribute on pagination container
+        // Method 1 (PRIORITY): Parse current page from URL - most reliable for CPT archives
+        if (isset($_SERVER['REQUEST_URI']) && preg_match('/\/page\/(\d+)\/?/', $_SERVER['REQUEST_URI'], $matches)) {
+            $current_page = intval($matches[1]);
+        }
+        
+        // Method 2: Check WordPress query vars
+        if ($current_page === 0) {
+            $paged_var = get_query_var('paged');
+            if (!$paged_var) {
+                $paged_var = get_query_var('page'); // For static front page
+            }
+            if ($paged_var) {
+                $current_page = intval($paged_var);
+            }
+        }
+        
+        // Method 3: Check data-init-pagination attribute on pagination container
         $pagination_containers = $xpath->query('//*[contains(@class, "mk-pagination") and @data-init-pagination]');
-        if ($pagination_containers->length > 0) {
+        if ($current_page === 0 && $pagination_containers->length > 0) {
             $init_page = $pagination_containers->item(0)->getAttribute('data-init-pagination');
             if ($init_page && $init_page !== '' && $init_page !== '0') {
                 $current_page = intval($init_page);
             }
         }
         
-        // Method 2: Check the pagination-current-page span (in mk-total-pages)
+        // Method 4: Check the pagination-current-page span (in mk-total-pages)
         if ($current_page === 0) {
             $current_page_display = $xpath->query('//*[contains(@class, "mk-total-pages")]//*[contains(@class, "pagination-current-page") or contains(@class, "js-current-page")]');
             if ($current_page_display->length > 0) {
@@ -286,16 +302,7 @@ class SEO_Friendly_Jupiter_Pagination {
             }
         }
         
-        // Method 3: Fallback to WordPress query var
-        if ($current_page === 0) {
-            $paged_var = get_query_var('paged');
-            if (!$paged_var) {
-                $paged_var = get_query_var('page'); // For static front page
-            }
-            $current_page = max(1, intval($paged_var));
-        }
-        
-        // Ensure we have a valid page number
+        // Ensure we have a valid page number (default to 1)
         if ($current_page === 0) {
             $current_page = 1;
         }
